@@ -20,7 +20,7 @@
 /* Layout: menú lateral fijo (compu) + contenido + columna derecha de pendientes y alertas (pantallas anchas); en celular, cajón de menú, barra inferior con botón central «Cargar» y pendientes arriba del panel. Identidad de la tienda: Tenor Sans + Inter, blanco/negro con verde VOËL. */
 :root{
   --paper:#F3F5F3; --surface:#FFFFFF; --ink:#151917; --ink2:#38403B; --muted:#5F6862; --line:#DCE1DD; --soft:#ECF0ED;
-  --accent:#2E5E3A; --accent-ink:#FFFFFF; --accent-soft:#DCE9DF; --ref:#A2ABA5; --taupe:#8B7D6B;
+  --accent:#2F3A34; --accent-ink:#F4F1EC; --accent-soft:#E2E7E3; --ref:#A2ABA5; --taupe:#8B7D6B;
   --ok:#2C7A4B; --ok-soft:#DDF0E3; --warn:#94600F; --warn-soft:#F6EAD3; --bad:#B3261E; --bad-soft:#F8DEDB;
   --scrim:rgba(12,16,14,.45);
   --display:"Tenor Sans","Didot","Bodoni 72",Georgia,serif;
@@ -29,12 +29,12 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --paper:#0E1210; --surface:#161B18; --ink:#E7ECE8; --ink2:#C3CBC6; --muted:#97A29B; --line:#29312C; --soft:#1E2521;
-  --accent:#78BE8C; --accent-ink:#0C1A10; --accent-soft:#1B3123; --ref:#5E6862; --taupe:#B5A792;
+  --accent:#A9BDB0; --accent-ink:#16201B; --accent-soft:#26302B; --ref:#5E6862; --taupe:#B5A792;
   --ok:#6FCB93; --ok-soft:#173023; --warn:#E7B35E; --warn-soft:#3A2B12; --bad:#F08B83; --bad-soft:#3D1A17;
   --scrim:rgba(0,0,0,.6); color-scheme:dark}}
 :root[data-theme="dark"]{
   --paper:#0E1210; --surface:#161B18; --ink:#E7ECE8; --ink2:#C3CBC6; --muted:#97A29B; --line:#29312C; --soft:#1E2521;
-  --accent:#78BE8C; --accent-ink:#0C1A10; --accent-soft:#1B3123; --ref:#5E6862; --taupe:#B5A792;
+  --accent:#A9BDB0; --accent-ink:#16201B; --accent-soft:#26302B; --ref:#5E6862; --taupe:#B5A792;
   --ok:#6FCB93; --ok-soft:#173023; --warn:#E7B35E; --warn-soft:#3A2B12; --bad:#F08B83; --bad-soft:#3D1A17;
   --scrim:rgba(0,0,0,.6); color-scheme:dark}
 *{box-sizing:border-box}
@@ -309,7 +309,7 @@ body{margin:0}img{max-width:100%}[hidden]{display:none!important}
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="platform.js?v=2026.11.10-2"></script>
+<script src="platform.js?v=2026.11.10-3"></script>
 <script>
 "use strict";
 /* ---------- utilidades ---------- */

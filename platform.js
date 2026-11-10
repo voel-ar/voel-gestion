@@ -8,7 +8,7 @@
 "use strict";
 const SUPABASE_URL = "https://davfkrkhpparubvnslhc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdmZrcmtocHBhcnVidm5zbGhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzMzMyODAsImV4cCI6MjEwOTkwOTI4MH0.jqEeh4UJxHz_i1xwehMep9hXvsjV2UUYXkzm8sdbt3Y";
-const APP_VERSION = "2026.11.10-2";
+const APP_VERSION = "2026.11.10-3";
 const REFRESH_MS = 30000;
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -45,6 +45,7 @@ function applyRow(row){ if (!row || !row.col) return false;
   const m = colMap(row.col), old = m.get(row.id), nd = row.data || {};
   if (old !== undefined && JSON.stringify(old) === JSON.stringify(nd)) return false;
   m.set(row.id, nd); queue(row.col, row.id); return true; }
+const tomb = new Map();              // "col/id" -> hora de borrado local (evita que un aviso viejo lo reviva)
 function removeRow(c, id){ const m = colMap(c); if (!m.has(id)) return false; m.delete(id); queue(c, id); return true; }
 
 /* ---------- carga completa (al entrar, al volver, al recuperar internet y cada 30 s) ---------- */
@@ -73,7 +74,7 @@ function startRealtime(){
   channel = sb.channel("docs-voel")
     .on("postgres_changes", { event: "*", schema: "public", table: "docs" }, p => {
       if (p.eventType === "DELETE") { const o = p.old || {}; if (o.col) removeRow(o.col, o.id); else refreshAll(); }
-      else applyRow(p.new);
+      else { const n = p.new || {}, t = tomb.get(n.col + "/" + n.id); if (t && Date.now() - t < 15000) return; applyRow(n); }
     })
     .subscribe(st => { if (st === "SUBSCRIBED") refreshAll(); });
 }
@@ -86,6 +87,7 @@ setInterval(() => { if (document.visibilityState === "visible") refreshAll(); },
 function dbError(error){ const e = new Error(error && error.message || "Error de base de datos");
   e.code = (error && (error.code === "42501" || /row-level security|permission/i.test(error.message || ""))) ? "invalid_argument" : "unavailable"; return e; }
 async function writeDoc(c, id, data){
+  tomb.delete(c + "/" + id);
   const prev = colMap(c).get(id);
   applyRow({ col: c, id, data }); flush();
   const { error } = await sb.from("docs").upsert({ col: c, id, data, updated_by: session && session.user.id }, { onConflict: "col,id" });
@@ -93,6 +95,7 @@ async function writeDoc(c, id, data){
 }
 async function deleteDoc(c, id){
   const prev = colMap(c).get(id);
+  tomb.set(c + "/" + id, Date.now());
   removeRow(c, id); flush();
   const { error } = await sb.from("docs").delete().eq("col", c).eq("id", id);
   if (error) { if (prev !== undefined) applyRow({ col: c, id, data: prev }); flush(); throw dbError(error); }
@@ -143,8 +146,8 @@ const user = {
   async can(){ return member ? true : false; },
   async id(){ return session ? session.user.id : null; },
   async name(){ return member ? member.nombre || "" : ""; },
-  async me(){ return { id: session ? session.user.id : null, name: member ? member.nombre || "" : "", avatarUrl: "", color: "#2E5E3A", email: session ? session.user.email : null, isOwner: isDueno(), canEdit: isDueno() }; },
-  async profiles(ids){ const out = {}; [].concat(ids || []).forEach(id => { out[id] = { id, name: nameFor(id), avatarUrl: "", color: "#2E5E3A", email: null, isMe: !!session && id === session.user.id, guest: false }; }); return out; },
+  async me(){ return { id: session ? session.user.id : null, name: member ? member.nombre || "" : "", avatarUrl: "", color: "#2F3A34", email: session ? session.user.email : null, isOwner: isDueno(), canEdit: isDueno() }; },
+  async profiles(ids){ const out = {}; [].concat(ids || []).forEach(id => { out[id] = { id, name: nameFor(id), avatarUrl: "", color: "#2F3A34", email: null, isMe: !!session && id === session.user.id, guest: false }; }); return out; },
   async search(){ return []; }
 };
 const downloads = {
