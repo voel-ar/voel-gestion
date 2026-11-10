@@ -8,7 +8,7 @@
 "use strict";
 const SUPABASE_URL = "https://davfkrkhpparubvnslhc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdmZrcmtocHBhcnVidm5zbGhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzMzMyODAsImV4cCI6MjEwOTkwOTI4MH0.jqEeh4UJxHz_i1xwehMep9hXvsjV2UUYXkzm8sdbt3Y";
-const APP_VERSION = "2026.11.10-1";
+const APP_VERSION = "2026.11.10-2";
 const REFRESH_MS = 30000;
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
