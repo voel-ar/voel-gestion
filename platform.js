@@ -8,7 +8,7 @@
 "use strict";
 const SUPABASE_URL = "https://davfkrkhpparubvnslhc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdmZrcmtocHBhcnVidm5zbGhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzMzMyODAsImV4cCI6MjEwOTkwOTI4MH0.jqEeh4UJxHz_i1xwehMep9hXvsjV2UUYXkzm8sdbt3Y";
-const APP_VERSION = "2026.11.10-3";
+const APP_VERSION = "2026.11.10-4";
 const REFRESH_MS = 30000;
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -165,7 +165,7 @@ let readyResolve; const ready = new Promise(r => readyResolve = r);
 window.claude = { use: async (name) => { await ready; return name === "db" ? db : name === "user" ? user : name === "downloads" ? downloads : null; } };
 window.VOEL_PLATFORM = {
   version: APP_VERSION,
-  async logout(){ await sb.auth.signOut(); location.reload(); },
+  async logout(){ try { if (session) localStorage.removeItem(BIO_KEY(session.user.id)); } catch(e){} await sb.auth.signOut(); location.replace(location.pathname); },
   refresh: refreshAll
 };
 function setStatus(s){ document.documentElement.dataset.conn = s; }
@@ -176,7 +176,7 @@ function loginUI(msg, mode){
   const recovery = mode === "recovery";
   L.root.innerHTML = `<form class="lg-card" autocomplete="on">
     <div class="lg-brand"><b>VOËL</b><span>Gestión mayorista</span></div>
-    ${recovery ? `<p class="lg-p">Elegí tu nueva contraseña.</p>
+    ${recovery ? `<p class="lg-p">${mode === "recovery" && L.invite ? "¡Bienvenido/a a VOËL! Elegí la contraseña con la que vas a entrar." : "Elegí tu nueva contraseña."}</p>
       <label for="lg-pass">Nueva contraseña</label><input id="lg-pass" name="password" type="password" autocomplete="new-password" minlength="8" required>`
     : `<label for="lg-email">Email</label><input id="lg-email" name="email" type="email" autocomplete="username" inputmode="email" required>
       <label for="lg-pass">Contraseña</label><input id="lg-pass" name="password" type="password" autocomplete="current-password" required>`}
@@ -189,6 +189,7 @@ function loginUI(msg, mode){
   f.addEventListener("submit", async e => {
     e.preventDefault(); out.textContent = "Un momento…";
     if (recovery) { const { error } = await sb.auth.updateUser({ password: f.password.value }); out.textContent = error ? "No se pudo guardar: " + error.message : "Listo. Ya podés usar la app."; if (!error) setTimeout(() => location.replace(location.pathname), 900); return; }
+    L.fresh = true;
     const { error } = await sb.auth.signInWithPassword({ email: f.email.value.trim(), password: f.password.value });
     if (error) out.textContent = /invalid/i.test(error.message) ? "Email o contraseña incorrectos." : "No se pudo entrar: " + error.message;
   });
@@ -207,18 +208,90 @@ async function afterLogin(s){
   members = data || [];
   member = members.find(m => m.user_id === s.user.id) || null;
   if (!member) { await sb.auth.signOut(); loginUI("Tu usuario no está autorizado en VOËL. Pedile acceso a Kevin."); return; }
+  if (bioId() && !L.fresh) { const ok = await bioLock(); if (!ok) return; }
   if (L.root) L.root.hidden = true;
   await refreshAll(); startRealtime(); readyResolve();
+  if (!bioId()) bioOffer();
 }
+
+/* ---------- Face ID / huella: ingreso rápido en este dispositivo ---------- */
+// La sesión queda guardada en el equipo; Face ID es la llave para abrirla. La contraseña sigue sirviendo siempre.
+const BIO_KEY = uid => "voel-bio:" + uid, BIO_NO = uid => "voel-bio-no:" + uid;
+const isApple = /iPhone|iPad|Macintosh/.test(navigator.userAgent);
+const BIO_NAME = /iPhone|iPad/.test(navigator.userAgent) ? "Face ID" : isApple ? "Touch ID" : "huella o desbloqueo del equipo";
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64 = str => Uint8Array.from(atob(str.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+const rnd = () => crypto.getRandomValues(new Uint8Array(32));
+function bioId(){ try { return session && localStorage.getItem(BIO_KEY(session.user.id)); } catch(e){ return null; } }
+async function bioAvailable(){ try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch(e){ return false; } }
+async function bioCheck(){
+  const id = bioId(); if (!id) return false;
+  try {
+    const c = await navigator.credentials.get({ publicKey: { challenge: rnd(), rpId: location.hostname, allowCredentials: [{ type: "public-key", id: unb64(id) }], userVerification: "required", timeout: 60000 } });
+    return !!c;
+  } catch(e){ return false; }
+}
+let lockOpen = null;
+function bioLock(){
+  if (lockOpen) return lockOpen;
+  lockOpen = new Promise(resolve => {
+    if (!L.root) { L.root = document.createElement("div"); L.root.id = "login"; document.body.appendChild(L.root); }
+    L.root.innerHTML = `<div class="lg-card">
+      <div class="lg-brand"><b>VOËL</b><span>Gestión mayorista</span></div>
+      <p class="lg-p" style="text-align:center">Hola${member && member.nombre ? ", " + member.nombre.replace(/[<>&"]/g, "") : ""}.</p>
+      <div class="lg-msg" role="alert"></div>
+      <button type="button" class="lg-btn" id="lg-bio">Entrar con ${BIO_NAME}</button>
+      <button type="button" class="lg-link" id="lg-pw">Usar contraseña</button>
+      <p class="lg-foot">v${APP_VERSION}</p></div>`;
+    L.root.hidden = false;
+    const out = L.root.querySelector(".lg-msg");
+    const go = async auto => { out.textContent = ""; if (await bioCheck()) { L.root.hidden = true; lockOpen = null; lastHidden = 0; resolve(true); } else if (!auto) out.textContent = "No se pudo verificar. Probá de nuevo o entrá con tu contraseña."; };
+    L.root.querySelector("#lg-bio").onclick = () => go(false);
+    L.root.querySelector("#lg-pw").onclick = async () => { await sb.auth.signOut(); session = null; lockOpen = null; resolve(false); location.replace(location.pathname); };
+    go(true);
+  });
+  return lockOpen;
+}
+async function bioOffer(){
+  const uid = session.user.id;
+  try { if (localStorage.getItem(BIO_NO(uid))) return; } catch(e){}
+  if (!await bioAvailable()) return;
+  const box = document.createElement("div"); box.className = "bio-offer";
+  box.innerHTML = `<b>¿Entrar con ${BIO_NAME}?</b><span>La próxima vez abrís la app con ${BIO_NAME}, sin escribir la contraseña.</span>
+    <div><button type="button" class="lg-btn" data-b="si">Activar</button><button type="button" class="lg-link" data-b="no">Ahora no</button></div><small></small>`;
+  document.body.appendChild(box);
+  box.querySelector('[data-b="no"]').onclick = () => { try { localStorage.setItem(BIO_NO(uid), "1"); } catch(e){} box.remove(); };
+  box.querySelector('[data-b="si"]').onclick = async () => {
+    try {
+      const c = await navigator.credentials.create({ publicKey: {
+        challenge: rnd(), rp: { name: "VOËL Gestión", id: location.hostname },
+        user: { id: new TextEncoder().encode(uid), name: session.user.email || "VOËL", displayName: (member && member.nombre) || session.user.email || "VOËL" },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" }, timeout: 60000 } });
+      localStorage.setItem(BIO_KEY(uid), b64(c.rawId));
+      box.innerHTML = `<b>Listo: ${BIO_NAME} activado.</b><span>Desde ahora la app te lo pide al abrirla.</span>`; setTimeout(() => box.remove(), 3500);
+    } catch(e){ box.querySelector("small").textContent = "No se pudo activar. Podés intentarlo de nuevo."; }
+  };
+}
+// Si la app estuvo cerrada o en segundo plano más de 5 minutos, vuelve a pedir Face ID.
+let lastHidden = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") { lastHidden = Date.now(); return; }
+  if (session && member && bioId() && lastHidden && Date.now() - lastHidden > 5 * 60 * 1000) bioLock();
+});
 sb.auth.onAuthStateChange((ev, s) => {
   if (ev === "PASSWORD_RECOVERY") { session = s; loginUI("", "recovery"); return; }
+  if (ev === "SIGNED_IN" && s && L.invite) { session = s; loginUI("", "recovery"); return; }
   if (ev === "SIGNED_IN" && s && !session) afterLogin(s);
   if (ev === "SIGNED_OUT") { session = null; }
   if (ev === "TOKEN_REFRESHED" && s) session = s;
 });
 (async () => {
+  L.invite = /type=invite/.test(location.hash);
+  const viaLink = /type=(recovery|invite)/.test(location.hash);
   const { data } = await sb.auth.getSession();
-  if (data.session && !/type=recovery/.test(location.hash)) afterLogin(data.session); else if (!/type=recovery/.test(location.hash)) loginUI("");
+  if (L.invite && data.session) { session = data.session; loginUI("", "recovery"); return; }
+  if (data.session && !viaLink) afterLogin(data.session); else if (!viaLink) loginUI("");
 })();
 
 /* ---------- service worker (instalable y actualizable) ---------- */
