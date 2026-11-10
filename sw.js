@@ -1,5 +1,5 @@
 /* VOËL Gestión · service worker. Cambiar VERSION en cada publicación para que los celulares se actualicen. */
-const VERSION = "2026.11.10-5";
+const VERSION = "2026.11.10-6";
 const CACHE = "voel-gestion-" + VERSION;
 const SHELL = ["./", "index.html", "platform.js", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"];
