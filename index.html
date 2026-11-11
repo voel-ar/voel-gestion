@@ -231,6 +231,27 @@ input.search{width:100%;padding:10px 14px;border:1px solid var(--line);border-ra
 details.dv{margin-top:10px;font-size:12.5px}
 details.dv summary{cursor:pointer;color:var(--muted);font-weight:600}
 details.dv .tbl{margin-top:8px;max-height:260px;overflow:auto}
+.abrush{display:flex;gap:6px;flex-wrap:wrap}
+.ab{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 10px 0 6px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink2);font-size:12.5px;cursor:pointer}
+.ab b{display:inline-grid;place-items:center;min-width:26px;height:26px;border-radius:7px;background:var(--soft);font-size:12.5px;color:var(--ink)}
+.ab.ok b{background:var(--ok-soft);color:var(--ok)}.ab.warn b{background:var(--warn-soft);color:var(--warn)}.ab.bad b{background:var(--bad-soft);color:var(--bad)}.ab.mut b{color:var(--muted)}
+.ab.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);color:var(--ink);font-weight:600}
+@media (max-width:640px){.ab span{display:none}.ab{padding:0 6px}.ab.on span{display:inline}}
+.agrid{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);-webkit-overflow-scrolling:touch}
+table.ag{border-collapse:separate;border-spacing:0;width:auto;font-size:12.5px}
+table.ag th{text-transform:none;letter-spacing:0}
+table.ag th,table.ag td{padding:0;border-bottom:1px solid var(--soft);text-align:center;white-space:nowrap}
+table.ag .nm{position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;padding:6px 10px;min-width:118px;max-width:150px;white-space:normal;border-right:1px solid var(--line);font-size:13px}
+table.ag .nm b{display:block;font-weight:600}
+table.ag thead th{padding:5px 0;font-weight:600;color:var(--muted);font-size:11px;line-height:1.25;min-width:34px}
+table.ag thead th span{display:block;font-weight:500;font-size:10px}
+table.ag .hoy{background:var(--accent-soft)}table.ag thead th.hoy{color:var(--ink)}
+table.ag .cerr{background:var(--soft)}
+table.ag .tot{padding:0 8px;font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink2);min-width:34px}
+.ac{width:34px;height:38px;border:0;border-right:1px solid var(--surface);background:transparent;font:700 12.5px/1 inherit;color:var(--ink);cursor:pointer;padding:0}
+.ac:hover{background:var(--soft)}.ac:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.ac.ok{color:var(--ok);background:var(--ok-soft)}.ac.warn{color:var(--warn);background:var(--warn-soft)}.ac.bad{color:var(--bad);background:var(--bad-soft)}.ac.mut{color:var(--muted);background:var(--soft)}.ac.neu{color:var(--ink2);background:var(--soft)}
+.afill{display:block;margin-top:2px;border:0;background:none;padding:0;color:var(--accent);font-size:11.5px;text-decoration:underline;cursor:pointer}
 #tip{position:fixed;z-index:60;pointer-events:none;background:var(--ink);color:var(--paper);border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.35;box-shadow:0 6px 18px rgba(0,0,0,.2);max-width:240px}
 #tip b{display:block;font-size:14px;font-variant-numeric:tabular-nums}
 #tip .k{display:inline-block;width:12px;height:2px;border-radius:2px;vertical-align:middle;margin-right:6px}
@@ -319,7 +340,7 @@ body{margin:0}img{max-width:100%}[hidden]{display:none!important}
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="platform.js?v=2026.11.11-1"></script>
+<script src="platform.js?v=2026.11.11-2"></script>
 <script>
 "use strict";
 /* ---------- utilidades ---------- */
@@ -503,8 +524,10 @@ const tallerName=id=>(S.talleres.find(p=>p.id===id)||{}).nombre||"Taller sin car
 const ordenLabel=o=>o?o.id+" · "+(o.modelo||"")+" · "+tallerName(o.tallerId):"Orden inexistente";
 
 /* ---------- asistencia ---------- */
-const ASIS_EST=["Presente","Medio día","Ausente con aviso","Ausente sin aviso","Franco","Vacaciones","Feriado"];
-const asisTrabajo=e=>e==="Presente"||e==="Medio día";
+const ASIS_EST=["Presente","Llegó tarde","Medio día","Ausente con aviso","Ausente sin aviso","Franco","Vacaciones","Feriado"];
+const ASIS_COD={"Presente":["P","ok"],"Llegó tarde":["T","warn"],"Medio día":["M","warn"],"Ausente con aviso":["A","mut"],"Ausente sin aviso":["S","bad"],"Franco":["F","neu"],"Vacaciones":["V","neu"],"Feriado":["FE","neu"]};
+const asisTrabajo=e=>e==="Presente"||e==="Medio día"||e==="Llegó tarde";
+const asisCompleto=e=>e==="Presente"||e==="Llegó tarde";
 const toMin=t=>{if(!t)return null;const m=/^(\d{1,2}):(\d{2})/.exec(String(t));return m?(+m[1])*60+(+m[2]):null};
 const hsF=h=>(Math.round(h*100)/100).toLocaleString("es-AR",{maximumFractionDigits:2})+" h";
 const minF=m=>m>=60?Math.floor(m/60)+" h "+(m%60?m%60+" min":""):m+" min";
@@ -512,15 +535,15 @@ function calcAsis(r){
   const p=S.personal.find(x=>x.id===r.personaId)||{}, trab=asisTrabajo(r.estado);
   const e=toMin(r.entrada), s=toMin(r.salida), pe=toMin(p.horaEntrada), ps=toMin(p.horaSalida), tol=has(p.tolerancia)?p.tolerancia:0;
   const horas=trab&&e!=null&&s!=null&&s>e?(s-e)/60:null;
-  let tarde=null; if(trab&&r.estado==="Presente"&&e!=null&&pe!=null){const d=e-pe;tarde=d>tol?d:0}
-  let extra=null; if(has(r.extraManual))extra=r.extraManual; else if(trab&&r.estado==="Presente"&&s!=null&&ps!=null)extra=Math.max(0,s-ps)/60;
+  let tarde=null; if(asisCompleto(r.estado)&&e!=null&&pe!=null){const d=e-pe;tarde=d>tol?d:0}
+  let extra=null; if(has(r.extraManual))extra=r.extraManual; else if(asisCompleto(r.estado)&&s!=null&&ps!=null)extra=Math.max(0,s-ps)/60;
   return{p,trab,horas,tarde,extra,sinHorario:trab&&(pe==null||ps==null)};
 }
 function asisMes(personaId,periodo){
   const L=S.asistencia.filter(a=>a.personaId===personaId&&mk(a.fecha)===periodo), p=S.personal.find(x=>x.id===personaId)||{};
   const o={registros:L.length,dias:0,medios:0,conAviso:0,sinAviso:0,francos:0,tardes:0,minTarde:0,extra:0};
-  L.forEach(a=>{const c=calcAsis(a);if(a.estado==="Presente")o.dias++;else if(a.estado==="Medio día")o.medios++;else if(a.estado==="Ausente con aviso")o.conAviso++;else if(a.estado==="Ausente sin aviso")o.sinAviso++;else o.francos++;
-    if(c.tarde>0){o.tardes++;o.minTarde+=c.tarde}if(c.extra>0)o.extra+=c.extra});
+  L.forEach(a=>{const c=calcAsis(a);if(asisCompleto(a.estado))o.dias++;else if(a.estado==="Medio día")o.medios++;else if(a.estado==="Ausente con aviso")o.conAviso++;else if(a.estado==="Ausente sin aviso")o.sinAviso++;else o.francos++;
+    if(c.tarde>0){o.tardes++;o.minTarde+=c.tarde}else if(a.estado==="Llegó tarde")o.tardes++;if(c.extra>0)o.extra+=c.extra});
   o.diasEq=o.dias+o.medios/2; o.ausencias=o.conAviso+o.sinAviso;
   o.$extra=has(p.valorHoraExtra)&&o.extra>0?Math.round(o.extra*p.valorHoraExtra):null;
   o.$faltas=has(p.descFalta)&&o.sinAviso>0?o.sinAviso*p.descFalta:null;
@@ -744,21 +767,22 @@ const MOD={
     <div class="row"><select id="s-mes" aria-label="Mes" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface)">${P.map(x=>`<option value="${x.key}" ${x.key===UI.sMes?"selected":""}>${x.label}</option>`).join("")}</select>
     <button class="btn pri sm" data-act="dlSue" data-fmt="pdf">PDF</button><button class="btn sm" data-act="dlSue" data-fmt="xlsx">Excel</button></div></div></div>`}},
  asistencia:{title:"Asistencia",one:"registro",owner:1,icon:"clock",desc:"Ingreso, salida, llegadas tarde, horas extra y faltas por persona",
-  hint:"Marcá cada día con «Marcar el día». La llegada tarde y las horas extra se calculan solas con el horario de cada persona (en Personal). Si no tiene horario cargado, quedan sin calcular.",
+  hint:"Marcá con letras en la planilla. Si querés registrar la hora de ingreso y salida, usá «Marcar el día» o tocá un registro de la lista: la llegada tarde y las horas extra se calculan con el horario de cada persona.",
   fields:[{k:"fecha",l:"Fecha",t:"date",req:1,def:"today"},{k:"personaId",l:"Persona",t:"ref",ref:"personal",req:1},
    {k:"estado",l:"Estado",t:"select",o:ASIS_EST,req:1,def:"Presente"},
    {k:"entrada",l:"Hora de ingreso",t:"time",when:r=>asisTrabajo(r.estado)},{k:"salida",l:"Hora de salida",t:"time",when:r=>asisTrabajo(r.estado)},
-   {k:"_tarde",t:"calc",l:"Llegada tarde",when:r=>r.estado==="Presente",calc:c=>c.sinHorario?"Falta el horario en Personal":c.tarde==null?"—":c.tarde>0?minF(c.tarde):"En horario"},
+   {k:"_tarde",t:"calc",l:"Llegada tarde",when:r=>asisCompleto(r.estado),calc:c=>c.sinHorario?"Falta el horario en Personal":c.tarde==null?"—":c.tarde>0?minF(c.tarde):"En horario"},
    {k:"_horas",t:"calc",l:"Horas trabajadas",when:r=>asisTrabajo(r.estado),calc:c=>c.horas!=null?hsF(c.horas):"—"},
    {k:"_extra",t:"calc",l:"Horas extra",when:r=>asisTrabajo(r.estado),calc:c=>c.extra!=null?hsF(c.extra):"—"},
    {k:"extraManual",l:"Horas extra a mano (opcional)",t:"num",when:r=>asisTrabajo(r.estado)},
    {k:"notas",l:"Notas",t:"text",full:1}],
   live:r=>calcAsis(r),
   idFor:r=>safeId(r.personaId+"_"+r.fecha),hardDup:1,
+  filter:r=>!UI.aMes||mk(r.fecha)===UI.aMes,
   sort:(a,b)=>String(b.fecha).localeCompare(String(a.fecha))||persName(a.personaId).localeCompare(persName(b.personaId)),
   card:r=>{const c=calcAsis(r),ch=[];
    if(r.estado==="Ausente sin aviso")ch.push(["Falta sin aviso","bad"]);else if(!asisTrabajo(r.estado))ch.push([r.estado,""]);
-   if(r.estado==="Medio día")ch.push(["Medio día","warn"]);if(c.tarde>0)ch.push(["Tarde "+minF(c.tarde),"warn"]);if(c.extra>0)ch.push(["+"+hsF(c.extra)+" extra","ok"]);
+   if(r.estado==="Medio día")ch.push(["Medio día","warn"]);if(c.tarde>0)ch.push(["Tarde "+minF(c.tarde),"warn"]);else if(r.estado==="Llegó tarde")ch.push(["Llegó tarde","warn"]);if(c.extra>0)ch.push(["+"+hsF(c.extra)+" extra","ok"]);
    return{t:persName(r.personaId),s:fd(r.fecha)+(asisTrabajo(r.estado)?" · "+(r.entrada||"—")+" a "+(r.salida||"—"):""),a:c.horas!=null?hsF(c.horas):"",chips:ch}},
   check:(r,id)=>{const nid=safeId(r.personaId+"_"+r.fecha);const w=[];if(nid!==id&&S.asistencia.some(x=>x.id===nid))w.push("Esa persona ya tiene marcado el "+fd(r.fecha)+". Editá el registro original.");
    if(r.fecha>today())w.push("La fecha es futura.");return w},
@@ -766,11 +790,11 @@ const MOD={
   extra:()=>{const P=periods().filter(x=>x.formal);if(!UI.aMes||!P.find(x=>x.key===UI.aMes))UI.aMes=P.find(x=>x.key===mk(today()))?mk(today()):P[0].key;
    const per=S.personal.filter(p=>p.estado!=="Baja"||S.asistencia.some(a=>a.personaId===p.id&&mk(a.fecha)===UI.aMes)).sort(MOD.personal.sort);
    const rows=per.map(p=>[p,asisMes(p.id,UI.aMes)]);
-   return `<div class="card stack"><div class="between"><div><h3>Resumen del mes</h3><p class="tiny muted p0">Días, faltas, llegadas tarde y horas extra por persona. Pasalo a la liquidación desde «Liquidación del mes».</p></div>
-    <div class="row"><select id="a-mes" aria-label="Mes" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface)">${P.map(x=>`<option value="${x.key}" ${x.key===UI.aMes?"selected":""}>${x.label}</option>`).join("")}</select>
-    <button class="btn pri sm" data-act="asisDia" ${readOnly||!db?"disabled":""}>${ico("clock")}Marcar el día</button></div></div>
+   const sel=`<select id="a-mes" aria-label="Mes" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink)">${P.map(x=>`<option value="${x.key}" ${x.key===UI.aMes?"selected":""}>${x.label}</option>`).join("")}</select>`;
+   return asisGrid(per,sel)+`<div class="card stack"><div class="between"><div><h3>Resumen del mes</h3><p class="tiny muted p0">${esc(mName(UI.aMes))}: días, faltas, llegadas tarde y horas extra por persona. Pasalo a la liquidación desde «Liquidación del mes».</p></div>
+    <div class="row"><button class="btn pri sm" data-act="asisDia" ${readOnly||!db?"disabled":""}>${ico("clock")}Marcar el día</button></div></div>
     ${rows.length?`<div class="tbl"><table><thead><tr><th>Persona</th><th class="r">Días</th><th class="r">Medio día</th><th class="r">Faltas c/aviso</th><th class="r">Faltas s/aviso</th><th class="r">Tardes</th><th class="r">Horas extra</th><th class="r">$ extra</th><th class="r">$ desc. faltas</th></tr></thead><tbody>
-    ${rows.map(([p,o])=>`<tr><td>${esc(p.nombre)}</td><td class="r mono">${o.dias}</td><td class="r mono">${o.medios}</td><td class="r mono">${o.conAviso}</td><td class="r mono">${o.sinAviso}</td><td class="r mono">${o.tardes}${o.tardes?" ("+minF(o.minTarde)+")":""}</td><td class="r mono">${o.extra?hsF(o.extra):"0"}</td><td class="r mono">${o.$extra!=null?m$(o.$extra):o.extra?"Falta valor":"—"}</td><td class="r mono">${o.$faltas!=null?m$(o.$faltas):o.sinAviso?"Falta valor":"—"}</td></tr>`).join("")}
+    ${rows.map(([p,o])=>`<tr><td>${esc(p.nombre)}</td><td class="r mono">${o.dias}</td><td class="r mono">${o.medios}</td><td class="r mono">${o.conAviso}</td><td class="r mono">${o.sinAviso}</td><td class="r mono">${o.tardes}${o.minTarde?" ("+minF(o.minTarde)+")":""}</td><td class="r mono">${o.extra?hsF(o.extra):"0"}</td><td class="r mono">${o.$extra!=null?m$(o.$extra):o.extra?"Falta valor":"—"}</td><td class="r mono">${o.$faltas!=null?m$(o.$faltas):o.sinAviso?"Falta valor":"—"}</td></tr>`).join("")}
     </tbody></table></div>`:`<p class="small muted p0">Primero cargá las personas en «Personal».</p>`}</div>`}},
  pagosPers:{title:"Pagos al personal",one:"pago",owner:1,icon:"wallet",desc:"Adelantos y pagos, con el mes al que corresponden",
   fields:[{k:"fecha",l:"Fecha de pago",t:"date",req:1,def:"today"},{k:"personaId",l:"Persona",t:"ref",ref:"personal",req:1},{k:"periodo",l:"Mes al que corresponde",t:"month",req:1},
@@ -923,6 +947,39 @@ function renderRail(){$("#rail").innerHTML=ROLE.ready?railHTML():""}
 function renderBot(){
   const cur=UI.view, it=[["panel","Panel","panel"],["ventas","Ventas","ventas"],["+","Cargar","plus"],["m:ordenes","Producción","cut"],["menu","Menú","menu"]];
   $("#bot").innerHTML=`<div class="in">${it.map(([k,l,ic])=>k==="+"?`<button class="plus" data-act="quick" aria-label="Cargar"><span class="c">${ico(ic)}</span>${l}</button>`:k==="menu"?`<button data-act="drawer">${ico(ic)}${l}</button>`:`<button data-go="${k}" class="${cur===k||(k==="m:ordenes"&&viewGroup(cur)==="Producción")?"act":""}">${ico(ic)}${l}</button>`).join("")}</div>`;
+}
+
+/* ---------- planilla de asistencia (personas × días del mes) ---------- */
+const DOW1=["D","L","M","M","J","V","S"];
+function asisGrid(per,sel){
+  const mes=UI.aMes, [y,m]=mes.split("-").map(Number), n=new Date(y,m,0).getDate(), t=today(), br=UI.aBrush||"Presente";
+  const days=Array.from({length:n},(_,i)=>mes+"-"+String(i+1).padStart(2,"0"));
+  const idx={}; S.asistencia.forEach(a=>{if(mk(a.fecha)===mes)idx[a.personaId+"|"+a.fecha]=a});
+  const head=days.map(d=>`<th class="${d===t?"hoy":""}${!isOpen(d)?" cerr":""}"><span>${DOW1[dow(d)]}</span>${+d.slice(8)}</th>`).join("");
+  const rows=per.map(p=>{let P=0,F=0,T=0;
+    const cells=days.map(d=>{const a=idx[p.id+"|"+d],c=a&&ASIS_COD[a.estado];if(a){if(asisCompleto(a.estado))P++;if(a.estado==="Llegó tarde")T++;if(a.estado==="Ausente sin aviso"||a.estado==="Ausente con aviso")F++}
+      return `<td class="${d===t?"hoy":""}${!isOpen(d)?" cerr":""}"><button class="ac ${c?c[1]:""}" data-act="aCell" data-p="${esc(p.id)}" data-d="${d}" aria-label="${esc(p.nombre)} ${fd(d)}: ${a?esc(a.estado):"sin marcar"}" ${readOnly?"disabled":""}>${c?c[0]:""}</button></td>`}).join("");
+    return `<tr><th class="nm"><b>${esc(p.nombre)}</b><button class="afill" data-act="aFill" data-p="${esc(p.id)}" ${readOnly?"disabled":""}>Completar con P</button></th>${cells}<td class="tot">${P}</td><td class="tot">${T}</td><td class="tot">${F}</td></tr>`}).join("");
+  const brushes=Object.entries(ASIS_COD).map(([e,[c,cl]])=>`<button type="button" class="ab ${cl} ${br===e?"on":""}" data-act="aBrush" data-e="${esc(e)}" aria-pressed="${br===e}" title="${esc(e)}"><b>${c}</b><span>${esc(e)}</span></button>`).join("")+
+    `<button type="button" class="ab ${br==="borrar"?"on":""}" data-act="aBrush" data-e="borrar" aria-pressed="${br==="borrar"}"><b>✕</b><span>Borrar</span></button>`;
+  return `<div class="card stack"><div class="between"><div><h3>Planilla del mes</h3><p class="tiny muted p0">Elegí una letra y tocá los días de cada persona. Si tocás un día que ya tiene esa letra, se borra.</p></div>${sel||""}</div>
+   <div class="abrush" role="group" aria-label="Letra para marcar">${brushes}</div>
+   ${per.length?`<div class="agrid" data-ks="agrid"><table class="ag"><thead><tr><th class="nm">${esc(mName(mes))}</th>${head}<th class="tot">P</th><th class="tot">T</th><th class="tot">Faltas</th></tr></thead><tbody>${rows}</tbody></table></div>`
+   :`<div class="empty"><b>No hay personas cargadas</b>Cargalas primero en «Personal».</div>`}</div>`;
+}
+async function asisTap(pid,d){
+  if(!ROLE.owner||readOnly)return; const b=UI.aBrush||"Presente", id=safeId(pid+"_"+d), old=S.asistencia.find(x=>x.id===id);
+  if(b==="borrar"||(old&&old.estado===b)){if(old)await delDoc("asistencia",id);return}
+  if(d>today()&&!["Franco","Vacaciones","Feriado"].includes(b))return toast("Ese día todavía no llegó. A futuro solo podés marcar franco, vacaciones o feriado.");
+  const rec=Object.assign({},old||{},{fecha:d,personaId:pid,estado:b},stamp(old));
+  if(!asisTrabajo(b)){rec.entrada=null;rec.salida=null;rec.extraManual=null}
+  await writeDoc("asistencia",id,rec);
+}
+async function asisFill(pid){
+  if(!ROLE.owner||readOnly)return; const mes=UI.aMes,[y,m]=mes.split("-").map(Number),n=new Date(y,m,0).getDate(),t=today(); let k=0;
+  for(let i=1;i<=n;i++){const d=mes+"-"+String(i).padStart(2,"0");if(d>t||!isOpen(d))continue;const id=safeId(pid+"_"+d);if(S.asistencia.some(x=>x.id===id))continue;
+    if(await writeDoc("asistencia",id,Object.assign({fecha:d,personaId:pid,estado:"Presente"},stamp(null))))k++}
+  toast(k?k+" días marcados con P (solo días abiertos y sin marcar, hasta hoy)":"No quedaban días abiertos sin marcar");
 }
 
 /* ---------- vistas ---------- */
@@ -1123,6 +1180,7 @@ function vAjustes(){
 
 /* ---------- render ---------- */
 let rq=0;
+const KS={};
 function render(){
   if(rq)return; rq=requestAnimationFrame(()=>{rq=0;
     if(ROLE.ready&&!allowed(UI.view)&&!(UI.view.startsWith("m:")&&canMod(UI.view.slice(2))))UI.view="panel";
@@ -1138,7 +1196,9 @@ function render(){
       catch(e){console.error(e);h+=`<div class="banner bad">Error al mostrar esta sección: ${esc(e.message)}</div>`}
     }
     const a=document.activeElement, aid=a&&a.id, pos=a&&a.selectionStart;
+    document.querySelectorAll("#main [data-ks]").forEach(e=>{KS[e.dataset.ks+"|"+UI.view+"|"+(UI.aMes||"")]=e.scrollLeft});
     $("#main").innerHTML=h;
+    document.querySelectorAll("#main [data-ks]").forEach(e=>{const k=e.dataset.ks+"|"+UI.view+"|"+(UI.aMes||"");if(k in KS)e.scrollLeft=KS[k];else{const hoy=e.querySelector("th.hoy"),nm=e.querySelector(".nm");if(hoy){const x=hoy.getBoundingClientRect().left-e.getBoundingClientRect().left+e.scrollLeft-(nm?nm.offsetWidth:0);e.scrollLeft=Math.max(0,x-(e.clientWidth-(nm?nm.offsetWidth:0))/2)}}});
     if(aid&&aid.startsWith("q-")){const el=document.getElementById(aid);if(el){el.focus();try{el.setSelectionRange(pos,pos)}catch(e){}}}
     drawCharts(); flushNames();
     const sh=$("#sheet"); if(!sh.hidden&&F&&F.mod==="pend")openPendSheet();
@@ -1682,6 +1742,9 @@ document.addEventListener("click",e=>{
   if(act==="editVenta")return openVenta(a.dataset.d);
   if(act==="masiva")return openMasiva();
   if(act==="asisDia")return openAsisDia(today());
+  if(act==="aBrush"){UI.aBrush=a.dataset.e;return render()}
+  if(act==="aCell")return asisTap(a.dataset.p,a.dataset.d);
+  if(act==="aFill")return asisFill(a.dataset.p);
   if(act==="asisTodos"){document.querySelectorAll('#sheet [data-pid] [name="estado"]').forEach(s=>{if(!s.value)s.value="Presente"});return asisDiaPreview()}
   if(act==="bulkSave")return saveBulk();
   if(act==="new")return openForm(a.dataset.m,null);
