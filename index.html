@@ -319,7 +319,7 @@ body{margin:0}img{max-width:100%}[hidden]{display:none!important}
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="platform.js?v=2026.11.10-6"></script>
+<script src="platform.js?v=2026.11.11-1"></script>
 <script>
 "use strict";
 /* ---------- utilidades ---------- */
@@ -381,7 +381,7 @@ let toastT;function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=fa
 
 /* ---------- estado ---------- */
 const COLS_SHARED=["ventas","gastos","proveedores","ingresos","talleres","ordenes","entregas"];
-const COLS_OWNER=["compras","pagosProv","caja","personal","liquidaciones","pagosPers","articulos","ordenesValor","pagosTaller"];
+const COLS_OWNER=["compras","pagosProv","caja","personal","liquidaciones","pagosPers","articulos","ordenesValor","pagosTaller","asistencia"];
 const S={config:null,general:null};[...COLS_SHARED,...COLS_OWNER].forEach(c=>S[c]=[]);
 const loaded={};
 let db=null, USER=null, dbState="connecting", readOnly=false;
@@ -502,6 +502,30 @@ const persName=id=>(S.personal.find(p=>p.id===id)||{}).nombre||"Persona sin carg
 const tallerName=id=>(S.talleres.find(p=>p.id===id)||{}).nombre||"Taller sin cargar";
 const ordenLabel=o=>o?o.id+" · "+(o.modelo||"")+" · "+tallerName(o.tallerId):"Orden inexistente";
 
+/* ---------- asistencia ---------- */
+const ASIS_EST=["Presente","Medio día","Ausente con aviso","Ausente sin aviso","Franco","Vacaciones","Feriado"];
+const asisTrabajo=e=>e==="Presente"||e==="Medio día";
+const toMin=t=>{if(!t)return null;const m=/^(\d{1,2}):(\d{2})/.exec(String(t));return m?(+m[1])*60+(+m[2]):null};
+const hsF=h=>(Math.round(h*100)/100).toLocaleString("es-AR",{maximumFractionDigits:2})+" h";
+const minF=m=>m>=60?Math.floor(m/60)+" h "+(m%60?m%60+" min":""):m+" min";
+function calcAsis(r){
+  const p=S.personal.find(x=>x.id===r.personaId)||{}, trab=asisTrabajo(r.estado);
+  const e=toMin(r.entrada), s=toMin(r.salida), pe=toMin(p.horaEntrada), ps=toMin(p.horaSalida), tol=has(p.tolerancia)?p.tolerancia:0;
+  const horas=trab&&e!=null&&s!=null&&s>e?(s-e)/60:null;
+  let tarde=null; if(trab&&r.estado==="Presente"&&e!=null&&pe!=null){const d=e-pe;tarde=d>tol?d:0}
+  let extra=null; if(has(r.extraManual))extra=r.extraManual; else if(trab&&r.estado==="Presente"&&s!=null&&ps!=null)extra=Math.max(0,s-ps)/60;
+  return{p,trab,horas,tarde,extra,sinHorario:trab&&(pe==null||ps==null)};
+}
+function asisMes(personaId,periodo){
+  const L=S.asistencia.filter(a=>a.personaId===personaId&&mk(a.fecha)===periodo), p=S.personal.find(x=>x.id===personaId)||{};
+  const o={registros:L.length,dias:0,medios:0,conAviso:0,sinAviso:0,francos:0,tardes:0,minTarde:0,extra:0};
+  L.forEach(a=>{const c=calcAsis(a);if(a.estado==="Presente")o.dias++;else if(a.estado==="Medio día")o.medios++;else if(a.estado==="Ausente con aviso")o.conAviso++;else if(a.estado==="Ausente sin aviso")o.sinAviso++;else o.francos++;
+    if(c.tarde>0){o.tardes++;o.minTarde+=c.tarde}if(c.extra>0)o.extra+=c.extra});
+  o.diasEq=o.dias+o.medios/2; o.ausencias=o.conAviso+o.sinAviso;
+  o.$extra=has(p.valorHoraExtra)&&o.extra>0?Math.round(o.extra*p.valorHoraExtra):null;
+  o.$faltas=has(p.descFalta)&&o.sinAviso>0?o.sinAviso*p.descFalta:null;
+  return o;
+}
 function periods(){
   const L=[{key:"prueba",label:"Prueba",short:"Prueba",desde:pDesde(),hasta:pHasta(),formal:false}];
   const s=mk(formalStart()); let end=mAdd(s,11); if(mk(today())>end)end=mk(today());
@@ -686,7 +710,10 @@ const MOD={
  personal:{title:"Personal",one:"persona",fem:1,owner:1,icon:"user",desc:"Personas, modalidad e importe acordado",
   hint:"Solo personas reales. No se inventan sueldos ni descuentos.",
   fields:[{k:"nombre",l:"Persona",t:"text",req:1},{k:"rol",l:"Tarea / rol",t:"text"},{k:"modalidad",l:"Modalidad de pago",t:"select",o:OPT.modal,req:1},
-   {k:"importe",l:"Importe acordado",t:"money"},{k:"alta",l:"Fecha de alta",t:"date"},{k:"estado",l:"Estado",t:"select",o:["Activo","Baja"]},{k:"notas",l:"Notas",t:"text",full:1}],
+   {k:"importe",l:"Importe acordado",t:"money"},{k:"alta",l:"Fecha de alta",t:"date"},{k:"estado",l:"Estado",t:"select",o:["Activo","Baja"]},
+   {sec:"Horario (para asistencia)"},{k:"horaEntrada",l:"Hora de entrada",t:"time"},{k:"horaSalida",l:"Hora de salida",t:"time"},
+   {k:"tolerancia",l:"Tolerancia para llegar tarde (min)",t:"num"},{k:"valorHoraExtra",l:"Valor de la hora extra",t:"money"},{k:"descFalta",l:"Descuento por falta sin aviso",t:"money"},
+   {k:"notas",l:"Notas",t:"text",full:1}],
   sort:(a,b)=>String(a.nombre).localeCompare(String(b.nombre)),
   card:r=>{const L=S.liquidaciones.filter(l=>l.personaId===r.id).map(calcLiq);const s=sum(L,x=>x.saldo);
    return{t:r.nombre,s:[r.rol,r.modalidad,has(r.importe)?m$(r.importe):"importe sin informar"].filter(Boolean).join(" · "),a:m$(s),chips:r.estado==="Baja"?[["Baja",""]]:[]}},
@@ -695,19 +722,56 @@ const MOD={
   blockDel:r=>S.liquidaciones.some(l=>l.personaId===r.id)||S.pagosPers.some(p=>p.personaId===r.id)?"Tiene liquidaciones o pagos cargados.":null},
  liquidaciones:{title:"Liquidación del mes",one:"liquidación",fem:1,owner:1,icon:"file",desc:"Sueldo final por persona y mes",
   hint:"El gasto del mes cuenta aunque se pague después. Si hay liquidaciones del mes, el Resumen usa estas y no el presupuesto.",
-  fields:[{k:"periodo",l:"Mes",t:"month",req:1},{k:"personaId",l:"Persona",t:"ref",ref:"personal",req:1},{k:"dias",l:"Días trabajados",t:"num"},{k:"ausencias",l:"Ausencias",t:"num"},
-   {k:"base",l:"Importe base del período",t:"money",req:1},{k:"extras",l:"Extras",t:"money"},{k:"descuentos",l:"Descuentos informados",t:"money"},{k:"notas",l:"Notas",t:"text",full:1}],
+  fields:[{k:"periodo",l:"Mes",t:"month",req:1},{k:"personaId",l:"Persona",t:"ref",ref:"personal",req:1},
+   {k:"dias",l:"Días trabajados",t:"num",suggest:c=>c&&c.registros?c.diasEq:null,sl:v=>"Usar "+numF(v)+" (de asistencia)"},
+   {k:"ausencias",l:"Ausencias",t:"num",suggest:c=>c&&c.registros?c.ausencias:null,sl:v=>"Usar "+numF(v)+" (de asistencia)"},
+   {k:"base",l:"Importe base del período",t:"money",req:1},
+   {k:"extras",l:"Extras",t:"money",suggest:c=>c&&c.$extra,sl:v=>"Usar "+m$(v)+" (horas extra)"},
+   {k:"descuentos",l:"Descuentos informados",t:"money",suggest:c=>c&&c.$faltas,sl:v=>"Usar "+m$(v)+" (faltas sin aviso)"},
+   {k:"notas",l:"Notas",t:"text",full:1}],
+  live:r=>r.personaId&&r.periodo?asisMes(r.personaId,r.periodo):null,
   idFor:r=>safeId(r.personaId+"_"+r.periodo),
   sort:(a,b)=>String(b.periodo).localeCompare(String(a.periodo)),
   card:r=>{const k=calcLiq(r);return{t:persName(r.personaId)+" · "+mName(r.periodo),s:"Sueldo final "+m$(k.gasto)+" · Adelantos "+m$(k.adel)+" · Pagos "+m$(k.pag),a:m$(k.saldo),
    chips:[[k.saldo<0?"Pagado de más":k.saldo===0?"Saldado":"Pendiente",k.saldo<0?"bad":k.saldo===0?"ok":"warn"]]}},
-  preview:r=>{const k=calcLiq(r);return[["Sueldo final del mes",m$(k.gasto)],["Adelantos ya cargados",m$(k.adel)],["Pagos ya cargados",m$(k.pag)],["Saldo a pagar",m$(k.saldo)]]},
+  preview:r=>{const k=calcLiq(r),a=r.personaId&&r.periodo?asisMes(r.personaId,r.periodo):null;
+   const A=a&&a.registros?[["Asistencia del mes",a.dias+" días"+(a.medios?" + "+a.medios+" medios":"")+" · "+a.ausencias+" faltas · "+a.tardes+" tardes · "+(a.extra?hsF(a.extra):"0 h")+" extra"]]:[];
+   return[...A,["Sueldo final del mes",m$(k.gasto)],["Adelantos ya cargados",m$(k.adel)],["Pagos ya cargados",m$(k.pag)],["Saldo a pagar",m$(k.saldo)]]},
   check:(r,id)=>{const nid=safeId(r.personaId+"_"+r.periodo);return nid!==id&&S.liquidaciones.some(x=>x.id===nid)?["Ya hay una liquidación de esa persona para "+mName(r.periodo)+". Editá la original."]:[]},
   hardDup:1,summary:()=>"Saldo a pagar "+m$(situacion().personal),
   extra:()=>{const P=periods().filter(x=>x.formal);if(!UI.sMes||!P.find(x=>x.key===UI.sMes))UI.sMes=P.find(x=>x.key===mk(today()))?mk(today()):P[0].key;
    return `<div class="card"><div class="between"><div><h3>Sueldos del mes</h3><p class="tiny muted p0">Base, extras, descuentos, sueldo final, adelantos, pagos y saldo por persona.</p></div>
     <div class="row"><select id="s-mes" aria-label="Mes" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface)">${P.map(x=>`<option value="${x.key}" ${x.key===UI.sMes?"selected":""}>${x.label}</option>`).join("")}</select>
     <button class="btn pri sm" data-act="dlSue" data-fmt="pdf">PDF</button><button class="btn sm" data-act="dlSue" data-fmt="xlsx">Excel</button></div></div></div>`}},
+ asistencia:{title:"Asistencia",one:"registro",owner:1,icon:"clock",desc:"Ingreso, salida, llegadas tarde, horas extra y faltas por persona",
+  hint:"Marcá cada día con «Marcar el día». La llegada tarde y las horas extra se calculan solas con el horario de cada persona (en Personal). Si no tiene horario cargado, quedan sin calcular.",
+  fields:[{k:"fecha",l:"Fecha",t:"date",req:1,def:"today"},{k:"personaId",l:"Persona",t:"ref",ref:"personal",req:1},
+   {k:"estado",l:"Estado",t:"select",o:ASIS_EST,req:1,def:"Presente"},
+   {k:"entrada",l:"Hora de ingreso",t:"time",when:r=>asisTrabajo(r.estado)},{k:"salida",l:"Hora de salida",t:"time",when:r=>asisTrabajo(r.estado)},
+   {k:"_tarde",t:"calc",l:"Llegada tarde",when:r=>r.estado==="Presente",calc:c=>c.sinHorario?"Falta el horario en Personal":c.tarde==null?"—":c.tarde>0?minF(c.tarde):"En horario"},
+   {k:"_horas",t:"calc",l:"Horas trabajadas",when:r=>asisTrabajo(r.estado),calc:c=>c.horas!=null?hsF(c.horas):"—"},
+   {k:"_extra",t:"calc",l:"Horas extra",when:r=>asisTrabajo(r.estado),calc:c=>c.extra!=null?hsF(c.extra):"—"},
+   {k:"extraManual",l:"Horas extra a mano (opcional)",t:"num",when:r=>asisTrabajo(r.estado)},
+   {k:"notas",l:"Notas",t:"text",full:1}],
+  live:r=>calcAsis(r),
+  idFor:r=>safeId(r.personaId+"_"+r.fecha),hardDup:1,
+  sort:(a,b)=>String(b.fecha).localeCompare(String(a.fecha))||persName(a.personaId).localeCompare(persName(b.personaId)),
+  card:r=>{const c=calcAsis(r),ch=[];
+   if(r.estado==="Ausente sin aviso")ch.push(["Falta sin aviso","bad"]);else if(!asisTrabajo(r.estado))ch.push([r.estado,""]);
+   if(r.estado==="Medio día")ch.push(["Medio día","warn"]);if(c.tarde>0)ch.push(["Tarde "+minF(c.tarde),"warn"]);if(c.extra>0)ch.push(["+"+hsF(c.extra)+" extra","ok"]);
+   return{t:persName(r.personaId),s:fd(r.fecha)+(asisTrabajo(r.estado)?" · "+(r.entrada||"—")+" a "+(r.salida||"—"):""),a:c.horas!=null?hsF(c.horas):"",chips:ch}},
+  check:(r,id)=>{const nid=safeId(r.personaId+"_"+r.fecha);const w=[];if(nid!==id&&S.asistencia.some(x=>x.id===nid))w.push("Esa persona ya tiene marcado el "+fd(r.fecha)+". Editá el registro original.");
+   if(r.fecha>today())w.push("La fecha es futura.");return w},
+  summary:L=>{const t=today(),H=L.filter(a=>a.fecha===t);return H.length?"Hoy: "+H.filter(a=>asisTrabajo(a.estado)).length+" trabajando · "+H.filter(a=>!asisTrabajo(a.estado)).length+" ausentes o francos":"Hoy todavía no marcaste a nadie"},
+  extra:()=>{const P=periods().filter(x=>x.formal);if(!UI.aMes||!P.find(x=>x.key===UI.aMes))UI.aMes=P.find(x=>x.key===mk(today()))?mk(today()):P[0].key;
+   const per=S.personal.filter(p=>p.estado!=="Baja"||S.asistencia.some(a=>a.personaId===p.id&&mk(a.fecha)===UI.aMes)).sort(MOD.personal.sort);
+   const rows=per.map(p=>[p,asisMes(p.id,UI.aMes)]);
+   return `<div class="card stack"><div class="between"><div><h3>Resumen del mes</h3><p class="tiny muted p0">Días, faltas, llegadas tarde y horas extra por persona. Pasalo a la liquidación desde «Liquidación del mes».</p></div>
+    <div class="row"><select id="a-mes" aria-label="Mes" style="padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface)">${P.map(x=>`<option value="${x.key}" ${x.key===UI.aMes?"selected":""}>${x.label}</option>`).join("")}</select>
+    <button class="btn pri sm" data-act="asisDia" ${readOnly||!db?"disabled":""}>${ico("clock")}Marcar el día</button></div></div>
+    ${rows.length?`<div class="tbl"><table><thead><tr><th>Persona</th><th class="r">Días</th><th class="r">Medio día</th><th class="r">Faltas c/aviso</th><th class="r">Faltas s/aviso</th><th class="r">Tardes</th><th class="r">Horas extra</th><th class="r">$ extra</th><th class="r">$ desc. faltas</th></tr></thead><tbody>
+    ${rows.map(([p,o])=>`<tr><td>${esc(p.nombre)}</td><td class="r mono">${o.dias}</td><td class="r mono">${o.medios}</td><td class="r mono">${o.conAviso}</td><td class="r mono">${o.sinAviso}</td><td class="r mono">${o.tardes}${o.tardes?" ("+minF(o.minTarde)+")":""}</td><td class="r mono">${o.extra?hsF(o.extra):"0"}</td><td class="r mono">${o.$extra!=null?m$(o.$extra):o.extra?"Falta valor":"—"}</td><td class="r mono">${o.$faltas!=null?m$(o.$faltas):o.sinAviso?"Falta valor":"—"}</td></tr>`).join("")}
+    </tbody></table></div>`:`<p class="small muted p0">Primero cargá las personas en «Personal».</p>`}</div>`}},
  pagosPers:{title:"Pagos al personal",one:"pago",owner:1,icon:"wallet",desc:"Adelantos y pagos, con el mes al que corresponden",
   fields:[{k:"fecha",l:"Fecha de pago",t:"date",req:1,def:"today"},{k:"personaId",l:"Persona",t:"ref",ref:"personal",req:1},{k:"periodo",l:"Mes al que corresponde",t:"month",req:1},
    {k:"tipo",l:"Tipo",t:"select",o:["Adelanto","Pago"],req:1},{k:"importe",l:"Importe",t:"money",req:1},{k:"medio",l:"Medio de pago",t:"select",o:OPT.medios},{k:"notas",l:"Notas",t:"text",full:1}],
@@ -767,7 +831,7 @@ const IC={
  users:'<circle cx="9" cy="8" r="3"/><path d="M3 19c.8-3.4 3.2-5 6-5s5.2 1.6 6 5"/><circle cx="17" cy="9" r="2.5"/><path d="M16.5 14c2.3.2 3.9 1.7 4.5 4"/>',
  tag:'<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/>',
  ajustes:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
- plus:'<path d="M12 5v14M5 12h14"/>', menu:'<path d="M4 7h16M4 12h16M4 17h16"/>', close:'<path d="M6 6l12 12M18 6 6 18"/>',
+ clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', plus:'<path d="M12 5v14M5 12h14"/>', menu:'<path d="M4 7h16M4 12h16M4 17h16"/>', close:'<path d="M6 6l12 12M18 6 6 18"/>',
  paste:'<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9z"/>', bell:'<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>'
 };
 const ico=(k,cls="i")=>`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[k]||""}</svg>`;
@@ -776,7 +840,7 @@ const NAV=[
  ["Producción",[["m:ordenes","Órdenes de corte","cut"],["m:entregas","Entregas de taller","box"],["m:talleres","Talleres","factory"],["m:pagosTaller","Pagos a talleres","wallet",1]]],
  ["Proveedores",[["m:proveedores","Proveedores","truck"],["m:compras","Compras y deudas","file",1],["m:pagosProv","Pagos a proveedores","wallet",1],["m:ingresos","Ingreso de mercadería","box"]]],
  ["Gastos y caja",[["m:gastos","Gastos del local","receipt"],["m:caja","Movimientos de caja","wallet",1]]],
- ["Personal",[["m:personal","Personal","user",1],["m:liquidaciones","Liquidación del mes","file",1],["m:pagosPers","Pagos al personal","wallet",1]]],
+ ["Personal",[["m:personal","Personal","user",1],["m:asistencia","Asistencia","clock",1],["m:liquidaciones","Liquidación del mes","file",1],["m:pagosPers","Pagos al personal","wallet",1]]],
  ["Productos",[["m:articulos","Costos de productos","tag",1]]],
  ["Administración",[["equipo","Equipo","users",1],["ajustes","Ajustes","ajustes",1]]]
 ];
@@ -786,7 +850,7 @@ const viewGroup=v=>{for(const[g,L] of NAV)if(L.some(x=>x[0]===v))return g;return
 function allowed(v){for(const[,L] of NAV)for(const x of L)if(x[0]===v)return !x[3]||ROLE.owner;return v==="panel"}
 const QUICK=[["venta","Venta del día","Total y cobros","ventas"],["m:entregas","Entrega de taller","Prendas recibidas","box"],["m:ordenes","Orden de corte","Nuevo corte","cut"],
  ["m:ingresos","Ingreso de mercadería","De proveedores","box"],["m:gastos","Gasto","Luz, envíos, insumos","receipt"],["masiva","Carga masiva","Varios días de ventas","paste"],
- ["m:compras","Compra o deuda","Proveedor","file",1],["m:pagosProv","Pago a proveedor","Total o parcial","wallet",1],["m:pagosTaller","Pago a taller","Por entregas","wallet",1],["m:pagosPers","Pago al personal","Adelanto o sueldo","wallet",1],["m:caja","Movimiento de caja","Retiro o aporte","wallet",1]];
+ ["m:compras","Compra o deuda","Proveedor","file",1],["m:pagosProv","Pago a proveedor","Total o parcial","wallet",1],["m:pagosTaller","Pago a taller","Por entregas","wallet",1],["asisDia","Asistencia del día","Ingreso, tarde, extras","clock",1],["m:pagosPers","Pago al personal","Adelanto o sueldo","wallet",1],["m:caja","Movimiento de caja","Retiro o aporte","wallet",1]];
 
 /* ---------- pendientes y alertas ---------- */
 function pendientesAll(){
@@ -1170,6 +1234,7 @@ function fieldHTML(f,val,ro){
   if(f.t==="select")inp=`<select id="${id}" name="${f.k}"${dis}><option value="">Elegí…</option>${f.o.map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
   else if(f.t==="ref"){const L=(S[f.ref]||[]).slice().sort(MOD[f.ref].sort);inp=`<select id="${id}" name="${f.k}"${dis}><option value="">${L.length?(f.req?"Elegí…":"Ninguna"):"Primero cargá "+MOD[f.ref].title.toLowerCase()}</option>${L.map(r=>`<option value="${esc(r.id)}" ${r.id===val?"selected":""}>${esc(refLabel[f.ref](r))}</option>`).join("")}</select>`}
   else if(f.t==="date")inp=`<input id="${id}" name="${f.k}" type="date" value="${esc(val||"")}"${dis}>`;
+  else if(f.t==="time")inp=`<input id="${id}" name="${f.k}" type="time" value="${esc(val||"")}"${dis}>`;
   else if(f.t==="month")inp=`<input id="${id}" name="${f.k}" type="month" value="${esc(val||"")}" placeholder="aaaa-mm"${dis}>`;
   else if(f.t==="money"||f.t==="num"||f.t==="pct")inp=`<input id="${id}" name="${f.k}" inputmode="decimal" autocomplete="off" value="${has(val)?esc(numF(f.t==="pct"?val*100:val)):""}" ${f.t==="pct"?'placeholder="ej. 40"':f.t==="money"?`placeholder="${F&&F.mod==="articulos"?"$ 0":"ej. 850000 o 850 mil"}"`:""}${dis}>`;
   else inp=`<input id="${id}" name="${f.k}" value="${esc(val||"")}" autocomplete="off"${dis}>`;
@@ -1220,7 +1285,7 @@ function livePreview(){
   if(m.live){const {r}=readFields(form,visFields(m));const c=m.live(r);
     visFields(m).forEach(f=>{const w=form.querySelector(`[data-when="${f.k}"]`);if(w&&f.when)w.hidden=!f.when(r);
       if(f.t==="calc"){const o=document.getElementById("f-"+f.k);if(o)o.textContent=f.calc(c,r)}
-      if(f.suggest){const b=form.querySelector(`[data-act="sugg"][data-k="${f.k}"]`),v=f.suggest(c);if(b){b.hidden=!(v&&v!==r[f.k]);b.dataset.v=v||"";b.textContent="Usar "+m$(v)+" (recargo redondeado)"}}});}
+      if(f.suggest){const b=form.querySelector(`[data-act="sugg"][data-k="${f.k}"]`),v=f.suggest(c);if(b){b.hidden=!(v&&v!==r[f.k]);b.dataset.v=v||"";b.textContent=f.sl?f.sl(v):"Usar "+m$(v)+" (recargo redondeado)"}}});}
   if(!m.preview||!$("#pv"))return; const {r}=readFields(form,visFields(m));
   const P=m.preview(r); $("#pv").innerHTML=P.map(([a,b])=>`<div><span>${a}</span><b class="mono">${b}</b></div>`).join(""); $("#pv").hidden=!P.length;
 }
@@ -1381,7 +1446,49 @@ function openQuick(){
   const Q=QUICK.filter(q=>!q[4]||ROLE.owner);
   openSheet(`<div class="stack">${sheetHead("¿Qué querés cargar?")}<div class="qa">${Q.map(q=>`<button data-act="qa" data-k="${q[0]}"><span class="ic">${ico(q[3])}</span><span><b>${q[1]}</b><span>${q[2]}</span></span></button>`).join("")}</div></div>`,true);
 }
-function quickGo(k){closeSheet();if(k==="venta")return openVenta(today());if(k==="masiva")return openMasiva();if(k.startsWith("m:"))return openForm(k.slice(2),null)}
+/* ---------- marcar asistencia de todos en un día ---------- */
+function openAsisDia(fecha){
+  if(!ROLE.owner)return toast("Esta sección es solo para el dueño.");
+  F={mod:"asisDia"}; const f=fecha||today();
+  const per=S.personal.filter(p=>p.estado!=="Baja").sort(MOD.personal.sort);
+  const row=p=>{const a=S.asistencia.find(x=>x.personaId===p.id&&x.fecha===f)||null;
+    const est=a?a.estado:"", en=a?a.entrada||"":"", sa=a?a.salida||"":"";
+    return `<div class="card stack" data-pid="${esc(p.id)}" style="padding:12px">
+     <div class="between"><b>${esc(p.nombre)}</b><span class="tiny muted">${p.horaEntrada&&p.horaSalida?"Horario "+esc(p.horaEntrada)+" a "+esc(p.horaSalida):"Sin horario cargado"}</span></div>
+     <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">
+      <select name="estado" style="grid-column:1/-1;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font-size:16px;width:100%;min-width:0" aria-label="Estado de ${esc(p.nombre)}"><option value="">No marcar</option>${ASIS_EST.map(o=>`<option ${o===est?"selected":""}>${o}</option>`).join("")}</select>
+      <input type="time" style="padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font-size:16px;width:100%;min-width:0" name="entrada" value="${esc(en)}" aria-label="Ingreso" data-def="${esc(p.horaEntrada||"")}">
+      <input type="time" style="padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font-size:16px;width:100%;min-width:0" name="salida" value="${esc(sa)}" aria-label="Salida" data-def="${esc(p.horaSalida||"")}">
+     </div><div class="tiny muted" data-out></div></div>`};
+  openSheet(`<form class="stack" data-form="asisDia" novalidate>${sheetHead("Asistencia del día","Elegí el estado de cada persona. Ingreso y salida se completan con su horario; cambialos si entró o salió a otra hora.")}
+   <div class="f"><label for="ad-fecha">Fecha</label><input id="ad-fecha" type="date" value="${f}" max="${today()}"></div>
+   ${per.length?`<div class="row"><button type="button" class="btn sm" data-act="asisTodos">Todos presentes</button></div>${per.map(row).join("")}`:`<div class="empty"><b>No hay personas cargadas</b>Cargalas primero en «Personal».</div>`}
+   <div id="fwarn"></div>
+   <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="close">Cancelar</button><button type="submit" class="btn pri" id="fsave" ${per.length?"":"disabled"}>Guardar</button></div></form>`,true);
+  asisDiaPreview();
+}
+function asisDiaPreview(){
+  const form=$('#sheet form[data-form="asisDia"]'); if(!form)return; const f=$("#ad-fecha").value;
+  form.querySelectorAll("[data-pid]").forEach(c=>{const est=c.querySelector('[name="estado"]').value,en=c.querySelector('[name="entrada"]'),sa=c.querySelector('[name="salida"]');
+    const tr=asisTrabajo(est); en.disabled=sa.disabled=!tr;
+    if(tr){if(!en.value&&en.dataset.def)en.value=en.dataset.def;if(!sa.value&&sa.dataset.def)sa.value=sa.dataset.def}
+    const k=calcAsis({personaId:c.dataset.pid,fecha:f,estado:est,entrada:tr?en.value:null,salida:tr?sa.value:null});
+    c.querySelector("[data-out]").textContent=!est?"":!tr?est:[k.tarde>0?"Llegó "+minF(k.tarde)+" tarde":k.tarde===0?"En horario":"",k.extra>0?hsF(k.extra)+" extra":"",k.horas!=null?hsF(k.horas)+" trabajadas":""].filter(Boolean).join(" · ")});
+}
+async function saveAsisDia(form){
+  const f=$("#ad-fecha").value; if(!f)return showWarn(["Falta la fecha."],true); if(f>today())return showWarn(["La fecha es futura."],true);
+  const W=[]; let ok=0;
+  for(const c of form.querySelectorAll("[data-pid]")){const est=c.querySelector('[name="estado"]').value;if(!est)continue;
+    const tr=asisTrabajo(est), id=safeId(c.dataset.pid+"_"+f), old=S.asistencia.find(x=>x.id===id);
+    const en=tr?c.querySelector('[name="entrada"]').value||null:null, sa=tr?c.querySelector('[name="salida"]').value||null:null;
+    if(tr&&en&&sa&&toMin(sa)<=toMin(en)){W.push(persName(c.dataset.pid)+": la salida es antes del ingreso.");continue}
+    const rec=Object.assign({},old||{},{fecha:f,personaId:c.dataset.pid,estado:est,entrada:en,salida:sa},stamp(old));
+    if(!tr){rec.extraManual=null}
+    if(await writeDoc("asistencia",id,rec))ok++;}
+  if(W.length)return showWarn(W,true);
+  closeSheet(); toast(ok?"Asistencia guardada · "+ok+(ok===1?" persona":" personas"):"No marcaste a nadie");
+}
+function quickGo(k){closeSheet();if(k==="venta")return openVenta(today());if(k==="asisDia")return openAsisDia(today());if(k==="masiva")return openMasiva();if(k.startsWith("m:"))return openForm(k.slice(2),null)}
 function openPendSheet(){F={mod:"pend"};openSheet(`<div class="stack">${sheetHead("Pendientes y alertas")}<div class="rail" style="display:flex;flex-direction:column;gap:18px;position:static;height:auto;border:0;padding:0">${railHTML()}</div></div>`)}
 async function setPend(k,val){
   if(!ROLE.owner||!S.config)return;
@@ -1439,6 +1546,11 @@ function monthReport(p,only){
   const PP=S.pagosPers.filter(x=>p.formal?(x.periodo===p.key||inR(x.fecha)):inR(x.fecha)).sort((a,b)=>a.fecha.localeCompare(b.fecha));
   S_.push(sec("Pagos al personal",[["Fecha de pago","t"],["Persona","t"],["Corresponde a","t"],["Tipo","t"],["Importe","m"],["Medio","t"]],PP.map(x=>[fd(x.fecha),persName(x.personaId),mName(x.periodo),x.tipo,x.importe,x.medio||""]),
     {foot:PP.length?["Total","","","",sum(PP,x=>x.importe),""]:null}));
+  if(p.formal&&S.asistencia.some(a=>mk(a.fecha)===p.key)){
+    const AR=S.personal.map(pe=>[pe,asisMes(pe.id,p.key)]).filter(([,o])=>o.registros).map(([pe,o])=>[pe.nombre,o.dias,o.medios,o.conAviso,o.sinAviso,o.tardes,o.minTarde,Math.round(o.extra*100)/100,o.$extra,o.$faltas]).sort((a,b)=>String(a[0]).localeCompare(b[0]));
+    S_.push(sec("Asistencia",[["Persona","t"],["Días","n"],["Medios días","n"],["Faltas con aviso","n"],["Faltas sin aviso","n"],["Llegadas tarde","n"],["Minutos tarde","n"],["Horas extra","n"],["$ horas extra","m"],["$ descuento faltas","m"]],AR,
+      {note:"Las llegadas tarde y horas extra se calculan con el horario de cada persona. Los importes aparecen solo si la persona tiene cargado el valor de la hora extra o el descuento por falta."}));
+  }
   if(only==="sueldos")return{title:"Sueldos · "+(p.formal?mName(p.key):"Prueba"),sections:S_};
   const gIn=g=>p.formal?mesGasto(g)===p.key:inR(g.fecha);
   const G=S.gastos.filter(gIn).sort((a,b)=>a.fecha.localeCompare(b.fecha));
@@ -1539,6 +1651,7 @@ async function exportar(){
   add("Pagos a talleres",[["Fecha","Taller","Orden","Importe","Medio"],...S.pagosTaller.map(p=>[fd(p.fecha),tallerName(p.tallerId),p.ordenId||"",p.importe,p.medio||""])]);
   add("Costos",[["SKU","Tela","Modelo","Curva","Estado","Kg/m tela","Moneda","USD","Dólar","Precio tela $","Total tela","% uso","Tela usada","Capas","Cuerpos","Rinde","Tela x prenda","Taller","Fábrica","Marketing","Elástico/cierre","Ojal y botón","Botones","Accesorios","Otros","Costo unitario","Recargo","Precio c/recargo","Precio p/margen ref.","Precio final","Ganancia x prenda","Margen s/precio final","Control"],
    ...S.articulos.slice().sort(MOD.articulos.sort).map(a=>{const c=calcArt(a);return[a.codigo||"",a.tela||"",a.modelo||"",a.curva||"",a.estado||"",a.telaKg??"",a.moneda||"",a.telaUsd??"",a.dolar??"",c.tp??"",c.tTot??"",c.uso,c.tUsada??"",a.capas??"",a.cuerpos??"",c.rinde??"",c.tela!=null?Math.round(c.tela):"",a.taller??"",a.fabrica??"",a.marketing??"",a.elastico??"",c.ojal??"",c.bot??"",a.accesorios??"",a.otros??"",Math.round(c.costo),a.recargo??"",c.sugRec!=null?Math.round(c.sugRec):"",c.sug!=null?Math.round(c.sug):"",a.precio??"",c.gan!=null?Math.round(c.gan):"",c.mv??"",c.ctrl]})]);
+  add("Asistencia",[["Fecha","Persona","Estado","Ingreso","Salida","Horas","Minutos tarde","Horas extra","Notas"],...S.asistencia.slice().sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(a=>{const c=calcAsis(a);return[fd(a.fecha),persName(a.personaId),a.estado,a.entrada||"",a.salida||"",c.horas!=null?Math.round(c.horas*100)/100:"",c.tarde??"",c.extra!=null?Math.round(c.extra*100)/100:"",a.notas||""]})]);
   add("Proveedores",[["Proveedor","CUIT","Rubro","Contacto","Teléfono","Condición","Notas"],...S.proveedores.map(p=>[p.nombre,p.cuit||"",p.rubro||"",p.contacto||"",p.telefono||"",p.condicion||"",p.notas||""])]);
   add("Compras",[["ID","Fecha","Proveedor","Tipo","¿Es de VOËL?","Comprobante","Concepto","Importe","Vencimiento","Pagado","Notas de crédito","Saldo","Estado"],...S.compras.map(c=>{const k=calcCompra(c);return[c.id,fd(c.fecha),provName(c.proveedorId),c.tipo,c.esVoel,c.comprobante||"",c.concepto||"",c.importe,c.vencimiento?fd(c.vencimiento):"",k.pag,k.nc,k.saldo,k.estado]})]);
   add("Pagos proveedores",[["Fecha","ID compra","Proveedor","Tipo","Importe","Medio","Referencia","Notas"],...S.pagosProv.map(p=>{const c=S.compras.find(x=>x.id===p.compraId);return[fd(p.fecha),p.compraId,c?provName(c.proveedorId):"",p.tipo,p.importe,p.medio||"",p.referencia||"",p.notas||""]})]);
@@ -1568,6 +1681,8 @@ document.addEventListener("click",e=>{
   if(act==="newVenta")return openVenta(today());
   if(act==="editVenta")return openVenta(a.dataset.d);
   if(act==="masiva")return openMasiva();
+  if(act==="asisDia")return openAsisDia(today());
+  if(act==="asisTodos"){document.querySelectorAll('#sheet [data-pid] [name="estado"]').forEach(s=>{if(!s.value)s.value="Presente"});return asisDiaPreview()}
   if(act==="bulkSave")return saveBulk();
   if(act==="new")return openForm(a.dataset.m,null);
   if(act==="edit")return openForm(a.dataset.m,a.dataset.id);
@@ -1589,9 +1704,12 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("#sheet").hid
 document.addEventListener("input",e=>{
   if(e.target.dataset&&e.target.dataset.act==="search"){UI.q=e.target.value;render();return}
   if(e.target.id==="bulk-in"||e.target.id==="bulk-rep")return parseBulk();
+  if(e.target.closest("#sheet")&&F&&F.mod==="asisDia"){const w=$("#fwarn");if(w)w.innerHTML="";return asisDiaPreview()}
   if(e.target.closest("#sheet")){if(F&&F.mod!=="masiva"){F.forced=false;const s=$("#fsave");if(s)s.textContent="Guardar";const w=$("#fwarn");if(w)w.innerHTML=""}livePreview()}
 });
-document.addEventListener("change",e=>{if(e.target.id==="s-mes"){UI.sMes=e.target.value;return}if(e.target.id==="bulk-rep")return parseBulk();if(e.target.id==="v-fecha"&&e.target.value)loadVentaDate(e.target.value)});
+document.addEventListener("change",e=>{if(e.target.id==="s-mes"){UI.sMes=e.target.value;return}if(e.target.id==="a-mes"){UI.aMes=e.target.value;return render()}
+  if(e.target.id==="ad-fecha"&&e.target.value)return openAsisDia(e.target.value);
+  if(e.target.closest&&e.target.closest("#sheet")&&F&&F.mod==="asisDia")return asisDiaPreview();if(e.target.id==="bulk-rep")return parseBulk();if(e.target.id==="v-fecha"&&e.target.value)loadVentaDate(e.target.value)});
 document.addEventListener("submit",e=>{
   e.preventDefault(); const f=e.target;
   if(!db||readOnly)return toast("No se puede guardar en esta vista.");
@@ -1599,6 +1717,7 @@ document.addEventListener("submit",e=>{
   else if(f.dataset.form==="venta")submitVenta(f);
   else if(f.dataset.form==="cfg")saveCfg(f);
   else if(f.dataset.form==="cmv")saveCmv(f);
+  else if(f.dataset.form==="asisDia")saveAsisDia(f);
 });
 
 /* ---------- arranque ---------- */

@@ -27,7 +27,7 @@ create or replace function public.es_dueno() returns boolean
 -- Colecciones que solo ve y modifica el dueño (ganancias, sueldos, costos, deudas, pagos, caja)
 create or replace function public.col_privada(c text) returns boolean
   language sql immutable
-  as $$ select c in ('config','compras','pagosProv','caja','personal','liquidaciones','pagosPers','articulos','ordenesValor','pagosTaller') $$;
+  as $$ select c in ('config','compras','pagosProv','caja','personal','liquidaciones','pagosPers','articulos','ordenesValor','pagosTaller','asistencia') $$;
 
 create or replace function public.docs_marcar() returns trigger
   language plpgsql security definer set search_path = public
